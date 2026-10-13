@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#FF90E8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>dixzChat</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!-- Ikon SVG (stroke tebal) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></symbol>
+<symbol id="i-back" viewBox="0 0 24 24"><path d="M15 4L7 12l8 8"/></symbol>
+<symbol id="i-send" viewBox="0 0 24 24"><path d="M3 12h16M12 5l7 7-7 7"/></symbol>
+<symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="12"/><path d="M5 11v1a7 7 0 0014 0v-1M12 19v3"/></symbol>
+<symbol id="i-img" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16"/><circle cx="9" cy="10" r="2"/><path d="M3 18l6-5 4 3 3-3 5 4"/></symbol>
+<symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l5 5v13H6zM14 3v5h5"/></symbol>
+<symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s7-6 7-11a7 7 0 00-14 0c0 5 7 11 7 11z"/><circle cx="12" cy="10" r="2"/></symbol>
+<symbol id="i-close" viewBox="0 0 24 24"><path d="M5 5l14 14M19 5L5 19"/></symbol>
+<symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v10H3z"/></symbol>
+<symbol id="i-status" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-dasharray="4 3"/><circle cx="12" cy="12" r="2"/></symbol>
+<symbol id="i-phone" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z"/></symbol>
+<symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></symbol>
+<symbol id="i-pen" viewBox="0 0 24 24"><path d="M4 20l1-5L16 4l4 4L9 19z"/></symbol>
+<symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></symbol>
+<symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+<symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a5 5 0 0110 0v2M16 5a3 3 0 010 6M18 14a5 5 0 013 5v1"/></symbol>
+<symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14"/></symbol>
+<symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+<symbol id="i-video" viewBox="0 0 24 24"><rect x="2" y="6" width="14" height="12"/><path d="M16 10l6-3v10l-6-3z"/></symbol>
+<symbol id="i-reply" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 010 10h-3"/></symbol>
+</defs></svg>
+
+<div id="wipe"></div>
+<div id="boot"><div class="logo">dixzChat</div></div>
+<div id="toast" role="status"></div>
+<div id="offline" hidden>OFFLINE · pesan teks dikirim saat tersambung</div>
+
+<!-- ===== LOGIN / REGISTER ===== -->
+<main id="auth" class="screen" hidden>
+  <div class="logo">dixzChat</div>
+  <h1 class="hero">Ngobrol tanpa basa-basi.</h1>
+  <div class="tabs"><button id="tabLogin" class="chip on" type="button">LOGIN</button><button id="tabReg" class="chip" type="button">REGISTER</button></div>
+  <form id="authForm" class="form" autocomplete="on">
+    <div id="fUser" hidden><label for="aUser">USERNAME</label><input id="aUser" class="inp" autocapitalize="none" autocomplete="username"></div>
+    <div><label for="aEmail">EMAIL</label><input id="aEmail" class="inp" type="email" autocomplete="email" required></div>
+    <div><label for="aPass">PASSWORD</label><input id="aPass" class="inp" type="password" autocomplete="current-password" required minlength="6"></div>
+    <div id="capBox" class="cap" hidden><div><small>BUKTIKAN KAMU MANUSIA</small><b id="capQ">5 + 7 = ?</b></div><input id="capA" class="inp" inputmode="numeric" aria-label="Jawaban captcha"></div>
+    <button id="authSubmit" class="btn pink" type="submit">MASUK</button>
+  </form>
+</main>
+
+<!-- ===== APLIKASI ===== -->
+<div id="app" hidden>
+  <section id="v-home" class="view on">
+    <header class="pg"><h1>Beranda</h1></header>
+    <div id="chatList" class="lst"></div>
+    <div class="lab">KONTAK</div>
+    <div id="homeContacts" class="lst"></div>
+    <button id="fab" class="ib fab" aria-label="Chat baru"><svg class="i"><use href="#i-plus"/></svg></button>
+  </section>
+
+  <section id="v-status" class="view">
+    <header class="pg"><h1>Status</h1><button id="stAdd" class="ib" aria-label="Tambah status"><svg class="i"><use href="#i-plus"/></svg></button></header>
+    <div class="lst">
+      <div id="myStatus"></div>
+      <div class="lab" style="padding:0">TERBARU · hilang setelah 24 jam</div>
+      <div id="stRow"></div>
+    </div>
+  </section>
+
+  <section id="v-calls" class="view">
+    <header class="pg"><h1>Telepon</h1></header>
+    <div id="callHistory" class="lst"><div class="empty">Belum ada riwayat panggilan.<br><small>Tekan ikon telepon/video di ruang chat untuk memulai.</small></div></div>
+  </section>
+
+  <section id="v-settings" class="view">
+    <header class="pg"><h1>Pengaturan</h1></header>
+    <div class="lst">
+      <div class="prof"><div id="sAv"></div><button id="sPhoto" class="chip on">Ubah foto</button><input id="fAvatar" type="file" accept="image/*" hidden></div>
+      <div class="card col"><label for="sName">NAMA PENGGUNA</label><div class="inl"><input id="sName" class="inp" autocapitalize="none" maxlength="20"><button id="sNameBtn" class="ib" aria-label="Simpan username"><svg class="i"><use href="#i-pen"/></svg></button></div></div>
+      <div class="card col"><label for="sEmail">EMAIL</label><input id="sEmail" class="inp" readonly></div>
+      <div class="card col"><label for="sBio">BIO</label><textarea id="sBio" class="inp" rows="2" maxlength="120"></textarea></div>
+      <button id="sSave" class="btn pink">Simpan bio</button>
+      <button id="sSound" class="btn white">Efek suara: nyala</button>
+      <button id="sOut" class="btn white">Keluar</button>
+    </div>
+  </section>
+
+  <nav class="nav" aria-label="Navigasi utama">
+    <button class="ni on" data-v="home"><span class="ic"><svg class="i"><use href="#i-home"/></svg></span>Beranda</button>
+    <button class="ni" data-v="status"><span class="ic"><svg class="i"><use href="#i-status"/></svg></span>Status</button>
+    <button class="ni" data-v="calls"><span class="ic"><svg class="i"><use href="#i-phone"/></svg></span>Telepon</button>
+    <button class="ni" data-v="settings"><span class="ic"><svg class="i"><use href="#i-gear"/></svg></span>Pengaturan</button>
+  </nav>
+
+  <!-- Chat baru / kontak -->
+  <div id="sheet" class="overlay" hidden><div class="panel">
+    <div class="pg"><h1>Chat baru</h1><button id="sClose" class="ib" aria-label="Tutup"><svg class="i"><use href="#i-close"/></svg></button></div>
+    <button id="gNew" class="btn pink mx"><svg class="i"><use href="#i-users"/></svg> Buat grup baru</button>
+    <input id="sSearch" class="inp mx" placeholder="Cari username" aria-label="Cari username" autocapitalize="none">
+    <div id="sheetList" class="lst"></div>
+    <button id="more" class="btn white mx" hidden>Muat lagi</button>
+  </div></div>
+
+  <!-- Buat grup -->
+  <div id="gsheet" class="overlay" hidden><div class="panel">
+    <div class="pg"><h1>Grup baru</h1><button id="gClose" class="ib" aria-label="Tutup"><svg class="i"><use href="#i-close"/></svg></button></div>
+    <input id="gName" class="inp mx" placeholder="Nama grup" maxlength="30" aria-label="Nama grup">
+    <div id="gList" class="lst"></div>
+    <button id="gCreate" class="btn pink mx">Buat grup</button>
+  </div></div>
+
+  <!-- Tambah status -->
+  <div id="astSheet" class="overlay" hidden><div class="panel">
+    <div class="pg"><h1>Status baru</h1><button id="aClose" class="ib" aria-label="Tutup"><svg class="i"><use href="#i-close"/></svg></button></div>
+    <textarea id="aTxt" class="inp mx" rows="3" maxlength="140" placeholder="Tulis status teks..."></textarea>
+    <div id="aSw" class="sw mx"></div>
+    <button id="aPostText" class="btn pink mx">Kirim status teks</button>
+    <button id="aPickPhoto" class="btn mx"><svg class="i"><use href="#i-img"/></svg> Pilih foto</button>
+    <input id="fStatus" type="file" accept="image/*" hidden>
+  </div></div>
+
+  <!-- Menu lampiran -->
+  <div id="attach" class="overlay" hidden><div class="panel"><div class="tiles">
+    <button id="tMedia" class="tile" style="background:#FF90E8"><svg class="i big"><use href="#i-img"/></svg>Foto / Video</button>
+    <button id="tVoice" class="tile" style="background:#FFC900"><svg class="i big"><use href="#i-mic"/></svg>Suara</button>
+    <button id="tDoc" class="tile" style="background:#23A094"><svg class="i big"><use href="#i-file"/></svg>Dokumen</button>
+    <button id="tLoc" class="tile" style="background:#fff"><svg class="i big"><use href="#i-pin"/></svg>Lokasi</button>
+  </div></div></div>
+
+  <!-- Menu pesan (tekan lama) -->
+  <div id="msgMenu" class="overlay" hidden><div class="panel"><div class="lst">
+    <button id="mmReply" class="btn"><svg class="i"><use href="#i-reply"/></svg> Balas</button>
+    <button id="mmCopy" class="btn">Salin teks</button>
+    <button id="mmDel" class="btn pink"><svg class="i"><use href="#i-trash"/></svg> Hapus untuk semua</button>
+    <button id="mmCancel" class="btn white">Batal</button>
+  </div></div></div>
+
+  <!-- Ruang chat -->
+  <section id="room" hidden>
+    <header class="rtop">
+      <button id="rBack" class="ib" aria-label="Kembali"><svg class="i"><use href="#i-back"/></svg></button>
+      <div id="rAv"></div>
+      <div class="grow"><div id="rName" class="nm"></div><div id="rSub" class="sb"></div>
+        <select id="aiModel" class="ai-model" aria-label="Pilih model AI" hidden>
+          <option value="llama-3.3-70b-versatile">Llama 3.3 70B · default</option>
+          <option value="llama-3.1-8b-instant">Llama 3.1 8B Instant</option>
+          <option value="gemma2-9b-it">Gemma 2 9B</option>
+          <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
+        </select>
+      </div>
+      <button id="rCall" class="ib" type="button" aria-label="Panggilan suara" hidden><svg class="i"><use href="#i-phone"/></svg></button>
+      <button id="rVideo" class="ib" type="button" aria-label="Panggilan video" hidden><svg class="i"><use href="#i-video"/></svg></button>
+    </header>
+    <div id="msgs"></div>
+    <div id="replyBar" class="reply-bar" hidden>
+      <div class="reply-bar-inner"><span id="replyToName" class="reply-name"></span><span id="replyToText" class="reply-preview"></span></div>
+      <button id="replyCancel" class="ib sm" type="button" aria-label="Batal balas"><svg class="i"><use href="#i-close"/></svg></button>
+    </div>
+    <div id="recBar" class="rec" hidden><i class="rdot"></i><b id="rTime">0:00</b><span class="grow hint">Merekam... lepas untuk kirim</span><button id="rCancel" class="chip tapOnly">Batal</button><button id="rSend" class="chip on tapOnly">Kirim</button></div>
+    <form id="rForm" class="bar">
+      <button id="bAttach" class="ib" type="button" aria-label="Lampiran"><svg class="i"><use href="#i-plus"/></svg></button>
+      <input id="rInput" class="inp" placeholder="Ketik pesan" aria-label="Pesan" autocomplete="off">
+      <button id="bSend" class="ib pink" aria-label="Kirim" hidden><svg class="i"><use href="#i-send"/></svg></button>
+      <button id="bMic" class="ib pink" type="button" aria-label="Tahan untuk merekam"><svg class="i"><use href="#i-mic"/></svg></button>
+    </form>
+    <input id="fMedia" type="file" accept="image/*,video/*" hidden><input id="fDoc" type="file" hidden>
+  </section>
+
+  <!-- Overlay panggilan suara / video -->
+  <div id="callOverlay" class="call-overlay" hidden>
+    <div class="call-box">
+      <div id="callAv" class="call-av"></div>
+      <div id="callName" class="call-name">...</div>
+      <div id="callStatus" class="call-status">Menghubungi...</div>
+      <div id="callTimer" class="call-timer" hidden>00:00</div>
+      <video id="localVideo" class="call-video local" playsinline muted autoplay hidden></video>
+      <video id="remoteVideo" class="call-video remote" playsinline autoplay hidden></video>
+      <div class="call-actions">
+        <button id="callMute" class="ib" type="button" aria-label="Mute"><svg class="i"><use href="#i-mic"/></svg></button>
+        <button id="callEnd" class="ib pink" type="button" aria-label="Akhiri"><svg class="i"><use href="#i-close"/></svg></button>
+        <button id="callCam" class="ib" type="button" aria-label="Kamera" hidden><svg class="i"><use href="#i-video"/></svg></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Widget musik Deezer (draggable, selalu di depan) -->
+  <div id="musicFab" class="music-fab" title="Cari musik Deezer" aria-label="Musik">
+    <svg class="i big" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="3" stroke-linecap="square"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+  </div>
+  <div id="musicPopup" class="music-popup" hidden>
+    <div class="music-head">
+      <b>Musik · Deezer</b>
+      <button id="musicClose" class="ib sm" type="button" aria-label="Tutup"><svg class="i"><use href="#i-close"/></svg></button>
+    </div>
+    <div class="music-search">
+      <input id="musicQ" class="inp" placeholder="Cari lagu / artis..." autocomplete="off">
+      <button id="musicGo" class="ib pink" type="button" aria-label="Cari"><svg class="i"><use href="#i-send"/></svg></button>
+    </div>
+    <div id="musicList" class="music-list"></div>
+    <div id="musicPlayer" class="music-player" hidden>
+      <div id="musicNow" class="music-now"></div>
+      <audio id="musicAudio" controls preload="none"></audio>
+    </div>
+  </div>
+
+  <!-- Penampil status -->
+  <div id="viewer" hidden>
+    <div id="vBars" class="vbars"></div>
+    <div class="vhead"><div id="vAv"></div><div class="grow"><div id="vName" class="nm"></div><div id="vTime" class="sb"></div></div><button id="vDel" class="ib" aria-label="Hapus status" hidden><svg class="i"><use href="#i-trash"/></svg></button><button id="vClose" class="ib" aria-label="Tutup"><svg class="i"><use href="#i-close"/></svg></button></div>
+    <div id="vBody"></div>
+    <button id="vPrev" class="zone l" aria-label="Sebelumnya"></button><button id="vNext" class="zone r" aria-label="Berikutnya"></button>
+  </div>
+  <div id="lightbox" hidden><img id="lbImg" alt="Foto"></div>
+</div>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
