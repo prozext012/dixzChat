@@ -6,17 +6,11 @@ import { compressImage, upload, removeFile, getLocation, startRecorder } from '.
 
 let cur = null, unsubM = null, unsubC = null, unsubU = null, tInt = null, seen = new Set(), first = true;
 let rec = null, recMode = '', recT = null, held = false, lastTyp = 0, menuCtx = null, playing = null;
-let replyTo = null;
 const pend = new Set(), busy = new Set();
 const typEl = h('div', 'bub in', h('span', 'dots', h('i'), h('i'), h('i')));
 typEl.hidden = true;
 export const currentChatId = () => cur?.id || null;
 const safe = n => n.replace(/[^\w.\-]/g, '_');
-function clearReply() {
-  replyTo = null;
-  const bar = $('replyBar');
-  if (bar) bar.hidden = true;
-}
 
 /* ---------- buka / tutup ---------- */
 export function openDirect(u) {
@@ -24,17 +18,14 @@ export function openDirect(u) {
 }
 export function openGroup(c) { openRoom({ id: c.id, type: 'group', title: c.name, participants: c.participants }); }
 async function openRoom(cfg) {
-  cur = cfg; seen = new Set(); first = true; cfg.data = {}; clearReply();
+  cur = cfg; seen = new Set(); first = true; cfg.data = {};
   $('msgs').replaceChildren(); typEl.hidden = true; $('rInput').value = ''; toggleSend();
   $('rName').textContent = cfg.title;
   const modelPicker = $('aiModel');
   if (modelPicker) {
     modelPicker.hidden = !cfg.peer?.isBot;
-    if (cfg.peer?.isBot) modelPicker.value = localStorage.getItem('dixzchat-ai-model') || 'llama-3.3-70b-versatile';
+    if (cfg.peer?.isBot) modelPicker.value = 'groq';
   }
-  const showCall = cfg.type === 'direct' && !cfg.peer?.isBot;
-  if ($('rCall')) $('rCall').hidden = !showCall;
-  if ($('rVideo')) $('rVideo').hidden = !showCall;
   $('rAv').replaceChildren(avatar(cfg.type === 'group' ? { username: cfg.title, isGroup: true } : cfg.peer));
   $('sheet').hidden = true; $('gsheet').hidden = true; $('room').hidden = false; sfx('open');
   await Promise.all(cfg.participants.map(getUser));
@@ -49,7 +40,7 @@ async function openRoom(cfg) {
 }
 export function closeRoom() {
   unsubM?.(); unsubC?.(); unsubU?.(); unsubM = unsubC = unsubU = null; clearInterval(tInt);
-  recEnd(false); clearReply(); cur = null; $('room').hidden = true;
+  recEnd(false); cur = null; $('room').hidden = true;
 }
 function updateSub() {
   if (!cur) return;
@@ -93,53 +84,24 @@ function content(m) {
   }
 }
 function attachMenu(b, id, ref, m, mine) {
-  let t, x, y;
-  const open = () => {
-    menuCtx = { ref, m, mine, id };
-    $('mmCopy').hidden = m.type !== 'text' || m.deleted;
-    $('mmDel').hidden = !mine || m.deleted;
-    if ($('mmReply')) $('mmReply').hidden = !!m.deleted;
-    if ($('mmCopy').hidden && $('mmDel').hidden && (!$('mmReply') || $('mmReply').hidden)) return;
-    $('msgMenu').hidden = false; sfx('open');
-  };
+  let t, x, y; const open = () => { menuCtx = { ref, m, mine }; $('mmCopy').hidden = m.type !== 'text' || m.deleted; $('mmDel').hidden = !mine || m.deleted; if ($('mmCopy').hidden && $('mmDel').hidden) return; $('msgMenu').hidden = false; sfx('open'); };
   b.addEventListener('pointerdown', e => { x = e.clientX; y = e.clientY; t = setTimeout(open, 450); });
   ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => b.addEventListener(ev, () => clearTimeout(t)));
   b.addEventListener('pointermove', e => { if (Math.abs(e.clientX - x) > 8 || Math.abs(e.clientY - y) > 8) clearTimeout(t); });
   b.addEventListener('contextmenu', e => { e.preventDefault(); open(); });
 }
-function replyPreview(m) {
-  if (!m.replyTo) return null;
-  const who = m.replyTo.senderId === S.me.id ? 'Kamu' : (S.cache.get(m.replyTo.senderId)?.username || 'pengguna');
-  let preview = m.replyTo.text || '';
-  if (!preview) {
-    if (m.replyTo.type === 'image') preview = 'Foto';
-    else if (m.replyTo.type === 'video') preview = 'Video';
-    else if (m.replyTo.type === 'audio') preview = 'Pesan suara';
-    else if (m.replyTo.type === 'file') preview = m.replyTo.fileName || 'File';
-    else if (m.replyTo.type === 'location') preview = 'Lokasi';
-    else preview = 'Pesan';
-  }
-  return h('div', 'reply-quote', h('b', '', who), h('span', '', preview.slice(0, 80)));
-}
 function bubble(id, ref, m, pending, fresh) {
   const mine = m.senderId === S.me.id, b = h('div', 'bub ' + (mine ? 'out' : 'in') + (fresh ? ' pop' : ''));
   if (fresh) b.style.setProperty('--r', mine ? '3deg' : '-3deg');
   if (cur.type === 'group' && !mine) b.append(h('div', 'who', S.cache.get(m.senderId)?.username || 'pengguna'));
-  if (m.deleted) {
-    b.classList.add('del');
-    b.append(h('i', '', 'Pesan ini dihapus'));
-  } else {
-    const rq = replyPreview(m);
-    if (rq) b.append(rq);
-    b.append(content(m));
-  }
+  if (m.deleted) { b.classList.add('del'); b.append(h('i', '', 'Pesan ini dihapus')); } else b.append(content(m));
   const meta = h('div', 'mt', fmt(m.timestamp)); if (mine) meta.append(tick(m, pending));
   b.append(meta); attachMenu(b, id, ref, m, mine); return b;
 }
 function renderMsgs(snap) {
   const box = $('msgs'), stick = !box.children.length || box.scrollHeight - box.scrollTop - box.clientHeight < 140;
   box.replaceChildren(); let newIn = false; const incoming = [];
-  if (cur.peer?.isBot) box.append(h('div', 'empty', 'dixz-ai by DIXZ-VIP · Jangan kirim data sensitif.'));
+  if (cur.peer?.isBot) box.append(h('div', 'empty', 'AI dixzChat menjawab lewat layanan AI pihak ketiga. Jangan kirim data sensitif. Jangan kirim data sensitif.'));
   cur.hist = snap.docs.map(d => d.data()).filter(m => m.type === 'text' && !m.deleted && m.text).slice(-12).map(m => ({ role: m.senderId === 'ai-dixz' ? 'model' : 'user', text: m.text }));
   snap.docs.forEach(d => {
     const m = d.data({ serverTimestamps: 'estimate' }), fresh = !first && !seen.has(d.id); seen.add(d.id);
@@ -161,16 +123,6 @@ async function ensureChat() {
 async function push(msg, preview) {
   const ref = await ensureChat(), un = {};
   cur.participants.filter(p => p !== S.me.id).forEach(o => un[o] = increment(1));
-  if (replyTo) {
-    msg.replyTo = {
-      id: replyTo.id,
-      senderId: replyTo.m.senderId,
-      type: replyTo.m.type || 'text',
-      text: (replyTo.m.text || '').slice(0, 120),
-      fileName: replyTo.m.fileName || null
-    };
-    clearReply();
-  }
   await setDoc(ref, { lastMessage: preview, lastMessageTime: serverTimestamp(), lastSender: S.me.id, unread: un, typing: { [S.me.id]: 0 } }, { merge: true });
   return addDoc(collection(ref, 'messages'), { senderId: S.me.id, timestamp: serverTimestamp(), status: 'sent', deleted: false, ...msg });
 }
@@ -181,33 +133,20 @@ function progressBubble(label) {
 }
 async function sendMedia(file, kind) {
   if (!cur) return;
-  if (!file || !file.size) return toast('File tidak valid.');
   if (kind !== 'image' && file.size > 25 * 1048576) return toast('Ukuran maksimal 25 MB.');
-  if (kind === 'image' && file.size > 15 * 1048576) return toast('Foto maksimal 15 MB.');
-  const label = kind === 'image' ? 'Foto' : kind === 'video' ? 'Video' : file.name;
-  const p = progressBubble('Mengunggah ' + label + '...');
+  const label = kind === 'image' ? 'Foto' : kind === 'video' ? 'Video' : file.name, p = progressBubble('Mengunggah ' + label + '...');
   try {
     await ensureChat();
     const blob = kind === 'image' ? await compressImage(file) : file;
-    const ext = kind === 'image' ? 'foto.jpg' : safe(file.name || 'file.bin');
-    const path = `chats/${cur.id}/${S.me.id}/${Date.now()}_${ext}`;
-    const ctype = blob.type || file.type || (kind === 'image' ? 'image/jpeg' : 'application/octet-stream');
-    const up = await upload(path, blob, p.set, ctype);
-    const msg = { type: kind, mediaUrl: up.url, mediaPath: up.path };
-    if (kind === 'file') { msg.fileName = file.name; msg.size = file.size; }
-    await push(msg, kind === 'file' ? 'Dokumen: ' + file.name : label);
-    sfx('send');
-  } catch (e) {
-    console.error(e);
-    toast('Gagal mengirim: ' + (e.message || e.code || 'error'));
-  } finally { p.done(); }
+    const path = `chats/${cur.id}/${S.me.id}/${Date.now()}_${kind === 'image' ? 'foto.jpg' : safe(file.name)}`;
+    const up = await upload(path, blob, p.set, blob.type || file.type);
+    const msg = { type: kind, mediaUrl: up.url, mediaPath: up.path }; if (kind === 'file') { msg.fileName = file.name; msg.size = file.size; }
+    await push(msg, kind === 'file' ? 'Dokumen: ' + file.name : label); sfx('send');
+  } catch (e) { toast('Gagal mengirim: ' + (e.message || e.code)); } finally { p.done(); }
 }
 async function recStart(mode) {
   if (rec || !cur) return;
-  let r;
-  try { r = await startRecorder(); } catch (err) {
-    return toast(err?.message?.includes('NotAllowed') || err?.name === 'NotAllowedError' ? 'Izin mikrofon ditolak.' : 'Mikrofon tidak tersedia.');
-  }
+  let r; try { r = await startRecorder(); } catch { return toast('Izin mikrofon ditolak.'); }
   if (mode === 'hold' && !held) { r.cancel(); return; }
   rec = r; recMode = mode; const t0 = Date.now();
   $('recBar').hidden = false; $('recBar').classList.toggle('tap', mode === 'tap'); $('rTime').textContent = '0:00'; sfx('rec');
@@ -217,25 +156,15 @@ async function recEnd(send) {
   if (!rec) return;
   const r = rec; rec = null; recMode = ''; clearInterval(recT); $('recBar').hidden = true; sfx('stop');
   if (!send) return r.cancel();
-  let blob, duration;
-  try {
-    ({ blob, duration } = await r.stop());
-  } catch (e) {
-    return toast('Gagal merekam suara.');
-  }
-  if (!blob || duration < 1) return toast('Tahan lebih lama untuk merekam.');
+  const { blob, duration } = await r.stop();
+  if (duration < 1) return toast('Tahan lebih lama untuk merekam.');
   const p = progressBubble('Mengirim pesan suara...');
   try {
     await ensureChat();
-    const ext = (blob.type || '').includes('mp4') ? 'm4a' : 'webm';
-    const path = `chats/${cur.id}/${S.me.id}/${Date.now()}_vn.${ext}`;
-    const up = await upload(path, blob, p.set, blob.type || 'audio/webm');
-    await push({ type: 'audio', mediaUrl: up.url, mediaPath: up.path, duration }, 'Pesan suara');
-    sfx('send');
-  } catch (e) {
-    console.error(e);
-    toast('Gagal mengirim suara: ' + (e.message || e.code || 'error'));
-  } finally { p.done(); }
+    const path = `chats/${cur.id}/${S.me.id}/${Date.now()}.${blob.type.includes('mp4') ? 'm4a' : 'webm'}`;
+    const up = await upload(path, blob, p.set, blob.type);
+    await push({ type: 'audio', mediaUrl: up.url, mediaPath: up.path, duration }, 'Pesan suara'); sfx('send');
+  } catch (e) { toast('Gagal mengirim suara: ' + (e.message || e.code)); } finally { p.done(); }
 }
 const toggleSend = () => { const has = !!$('rInput').value.trim(); $('bSend').hidden = !has; $('bMic').hidden = has || !!cur?.peer?.isBot; $('bAttach').hidden = !!cur?.peer?.isBot; };
 
@@ -246,7 +175,7 @@ async function askBot(msgRef, text) {
     const hist = [...(room.hist || [])];
     if (!hist.length || hist[hist.length - 1].text !== text) hist.push({ role: 'user', text });
     const idToken = await auth.currentUser.getIdToken();
-    const r = await fetch('/api/ai-chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken, messages: hist, model: localStorage.getItem('dixzchat-ai-model') || 'llama-3.3-70b-versatile' }) });
+    const r = await fetch('/api/ai-chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken, messages: hist, model: 'groq' }) });
     const j = await r.json(); if (!r.ok) throw new Error(j.error || 'AI gagal menjawab');
     const ref = doc(db, 'chats', room.id), inRoom = cur && cur.id === room.id;
     await setDoc(ref, { lastMessage: j.reply.slice(0, 80), lastMessageTime: serverTimestamp(), lastSender: 'ai-dixz', ...(inRoom ? {} : { unread: { [S.me.id]: increment(1) } }) }, { merge: true });
@@ -266,93 +195,6 @@ export async function markDelivered(id) {
 }
 
 /* ---------- pasang event (sekali) ---------- */
-function setReply(ctx) {
-  if (!ctx || !ctx.m || ctx.m.deleted) return;
-  replyTo = ctx;
-  const bar = $('replyBar');
-  if (!bar) return;
-  const who = ctx.m.senderId === S.me.id ? 'Kamu' : (S.cache.get(ctx.m.senderId)?.username || 'pengguna');
-  let preview = ctx.m.text || '';
-  if (!preview) {
-    if (ctx.m.type === 'image') preview = 'Foto';
-    else if (ctx.m.type === 'video') preview = 'Video';
-    else if (ctx.m.type === 'audio') preview = 'Pesan suara';
-    else if (ctx.m.type === 'file') preview = ctx.m.fileName || 'File';
-    else if (ctx.m.type === 'location') preview = 'Lokasi';
-    else preview = 'Pesan';
-  }
-  $('replyToName').textContent = who;
-  $('replyToText').textContent = preview.slice(0, 80);
-  bar.hidden = false;
-  $('rInput')?.focus();
-}
-
-function startCall(video) {
-  if (!cur || cur.peer?.isBot || cur.type !== 'direct') return;
-  const ov = $('callOverlay');
-  if (!ov) return;
-  $('callAv').replaceChildren(avatar(cur.peer));
-  $('callName').textContent = cur.peer.username || 'Kontak';
-  $('callStatus').textContent = video ? 'Memulai panggilan video...' : 'Memulai panggilan suara...';
-  $('callTimer').hidden = true;
-  $('localVideo').hidden = !video;
-  $('remoteVideo').hidden = !video;
-  $('callCam').hidden = !video;
-  ov.hidden = false;
-  sfx('open');
-
-  // WebRTC penuh butuh signaling server (Firebase RT / Cloud Function).
-  // Untuk sekarang: UI + akses media lokal, peer connection disiapkan.
-  let stream = null, timer = null, sec = 0;
-  const end = () => {
-    if (stream) stream.getTracks().forEach(t => t.stop());
-    stream = null;
-    if (timer) clearInterval(timer);
-    ov.hidden = true;
-    const lv = $('localVideo'), rv = $('remoteVideo');
-    if (lv) lv.srcObject = null;
-    if (rv) rv.srcObject = null;
-    sfx('stop');
-  };
-  $('callEnd').onclick = end;
-  $('callMute').onclick = () => {
-    if (!stream) return;
-    const tracks = stream.getAudioTracks();
-    tracks.forEach(t => { t.enabled = !t.enabled; });
-    toast(tracks[0]?.enabled ? 'Mikrofon nyala' : 'Mikrofon dimatikan', 'ok');
-  };
-  $('callCam').onclick = () => {
-    if (!stream) return;
-    const tracks = stream.getVideoTracks();
-    tracks.forEach(t => { t.enabled = !t.enabled; });
-  };
-
-  navigator.mediaDevices.getUserMedia({ audio: true, video: video ? { facingMode: 'user' } : false })
-    .then(s => {
-      stream = s;
-      if (video) {
-        const lv = $('localVideo');
-        if (lv) { lv.srcObject = s; lv.hidden = false; }
-      }
-      $('callStatus').textContent = 'Menunggu lawan bicara...';
-      // Simulasi "terhubung" setelah beberapa detik (tanpa signaling server peer tidak bisa saling dengar)
-      setTimeout(() => {
-        if (!stream) return;
-        $('callStatus').textContent = 'Terhubung (lokal)';
-        $('callTimer').hidden = false;
-        timer = setInterval(() => {
-          sec++;
-          $('callTimer').textContent = dur(sec);
-        }, 1000);
-        toast('Panggilan lokal aktif. Agar saling dengar butuh signaling server (WebRTC penuh).', 'ok');
-      }, 1500);
-    })
-    .catch(err => {
-      toast(err.name === 'NotAllowedError' ? 'Izin kamera/mikrofon ditolak.' : 'Gagal mengakses media.');
-      end();
-    });
-}
-
 export function initChat() {
   $('rBack').onclick = closeRoom;
   const modelPicker = $('aiModel');
@@ -360,8 +202,6 @@ export function initChat() {
     localStorage.setItem('dixzchat-ai-model', modelPicker.value);
     toast('Model AI diganti: ' + modelPicker.options[modelPicker.selectedIndex].text, 'ok');
   };
-  if ($('rCall')) $('rCall').onclick = () => startCall(false);
-  if ($('rVideo')) $('rVideo').onclick = () => startCall(true);
   $('rInput').addEventListener('input', () => {
     toggleSend(); const n = Date.now();
     if (cur && Object.keys(cur.data || {}).length && n - lastTyp > 2500) { lastTyp = n; updateDoc(doc(db, 'chats', cur.id), { ['typing.' + S.me.id]: n }).catch(() => {}); }
@@ -387,11 +227,6 @@ export function initChat() {
   mic.addEventListener('contextmenu', e => e.preventDefault());
   $('rCancel').onclick = () => recEnd(false); $('rSend').onclick = () => recEnd(true);
   $('mmCancel').onclick = () => $('msgMenu').hidden = true;
-  if ($('mmReply')) $('mmReply').onclick = () => {
-    $('msgMenu').hidden = true;
-    setReply(menuCtx);
-  };
-  if ($('replyCancel')) $('replyCancel').onclick = clearReply;
   $('mmCopy').onclick = () => { navigator.clipboard?.writeText(menuCtx.m.text || ''); $('msgMenu').hidden = true; toast('Teks disalin.', 'ok'); };
   $('mmDel').onclick = async () => {
     const { ref, m } = menuCtx; $('msgMenu').hidden = true;

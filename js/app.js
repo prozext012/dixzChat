@@ -6,7 +6,6 @@ import { initAuth } from './auth.js';
 import { initChat, openDirect, openGroup, closeRoom, markDelivered, currentChatId } from './chat.js';
 import { bindStatus, startStatus, stopStatus } from './status.js';
 import { initProfile, fillSettings } from './profile.js';
-import { initMusic } from './music.js';
 
 let unsubChats = null, lastDoc = null, hasMore = true, q = '', results = [], anim = true, view = 'home', loaded = false;
 const lastSeen = new Map();
@@ -51,7 +50,7 @@ $('sSearch').oninput = e => {
     if (!q) { results = []; return renderSheet(); }
     try {
       const s = await getDocs(query(collection(db, 'users'), orderBy('usernameLower'), where('usernameLower', '>=', q), where('usernameLower', '<=', q + '\uf8ff'), limit(30)));
-      results = s.docs.filter(d => d.id !== S.me.id).map(d => ({ id: d.id, ...d.data() })); results.forEach(u => S.cache.set(u.id, u)); if ('dixz-ai dixzchat ai dixz'.includes(q)) results.unshift(BOT); renderSheet();
+      results = s.docs.filter(d => d.id !== S.me.id).map(d => ({ id: d.id, ...d.data() })); results.forEach(u => S.cache.set(u.id, u)); if ('ai dixzchat'.includes(q)) results.unshift(BOT); renderSheet();
     } catch (err) { toast('Pencarian gagal: ' + err.code); }
   }, 300);
 };
@@ -134,7 +133,6 @@ async function heal(user) { // profil hilang (pendaftaran sebelumnya gagal di te
   await b.commit(); return getDoc(doc(db, 'users', user.uid));
 }
 initAuth(); initChat(); bindStatus(); initProfile(async () => { await setPresence(false); teardown(); });
-initMusic();
 onAuthStateChanged(auth, async user => {
   if (!user) { showAuth(); localStorage.removeItem(CK); try { teardown(); } catch (e) { console.warn(e); } return; }
   const c = JSON.parse(localStorage.getItem(CK) || 'null'), fromCache = c?.id === user.uid;
