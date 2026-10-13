@@ -3,9 +3,8 @@ Static site (tanpa build) · HTML + CSS + Vanilla JS (ES modules) + Firebase 13.
 
 ## Fitur
 Login/register + captcha · kontak otomatis (semua user) · chat 1-1 & grup · centang terkirim/diterima/dibaca ·
-indikator mengetik · hapus pesan untuk semua (tekan lama) · **balas pesan (reply)** · foto/video (kompres + progres) · pesan suara (tahan mic atau menu) ·
-dokumen · lokasi (link Google Maps) · status 24 jam (teks/foto) · foto profil, ganti username, bio · PWA (bisa di-install, shell offline) ·
-**widget musik Deezer** (logo bisa digeser, popup selalu di depan, putar preview) · **panggilan suara/video** (UI + media lokal; WebRTC penuh butuh signaling server).
+indikator mengetik · hapus pesan untuk semua (tekan lama) · foto/video (kompres + progres) · pesan suara (tahan mic atau menu) ·
+dokumen · lokasi (link Google Maps) · status 24 jam (teks/foto) · foto profil, ganti username, bio · PWA (bisa di-install, shell offline).
 
 ## Deploy
 1. Upload semua file di folder ini ke root repo GitHub.
@@ -19,21 +18,18 @@ dokumen · lokasi (link Google Maps) · status 24 jam (teks/foto) · foto profil
 4. Buka situs, daftar 2 akun (browser berbeda) lalu coba semua fitur. Di Android: menu Chrome > "Instal aplikasi".
 
 ## Catatan jujur
-- Panggilan suara/video: UI + akses kamera/mikrofon lokal sudah ada. Agar dua user saling dengar/lihat butuh signaling (Firebase Realtime / Cloud Function) + TURN server.
+- Panggilan suara/video belum ada (tab Telepon masih kosong). Butuh WebRTC + server TURN.
 - Notifikasi saat aplikasi ditutup belum ada (butuh FCM + backend/Cloud Functions).
 - Lampiran bisa dibaca siapa pun yang sudah login dan tahu URL-nya (URL berisi token acak), bukan hanya anggota chat.
 - Setelah deploy ulang, buka dua kali (service worker memuat versi lama dulu). Naikkan `V` di `sw.js` tiap rilis.
 
-## AI dixz-ai (Groq)
-Kontak **"dixz-ai"** (by **DIXZ-VIP**) muncul otomatis di daftar kontak. Saat chat AI dibuka, pilih model dari dropdown. Frontend hanya mengirim pesan dan nama model ke endpoint internal `/api/ai-chat`; request ke Groq diproses di server.
+## AI dixzChat (Groq API resmi lewat backend Vercel)
 
-Model: Llama 3.3 70B (default), Llama 3.1 8B Instant, Gemma 2 9B, Mixtral 8x7B.
+Semua chat AI menggunakan satu endpoint resmi Groq melalui `api/ai-chat.js`. API key hanya dibaca server dan tidak dikirim ke browser. Model default: `llama-3.3-70b-versatile`.
 
-1. Vercel > Settings > Environment Variables: set `GROQ_API_KEY` (opsional; key sudah di-hardcode sebagai fallback).
-2. Deploy ulang setelah mengubah kode.
-3. Backend memverifikasi Firebase login dan menerapkan batas sederhana 12 pesan/menit per akun.
+1. Di Vercel > Settings > Environment Variables, tambahkan `GROQ_API_KEY` dengan API key Groq yang valid. Jangan masukkan key ke HTML, JavaScript frontend, atau repository.
+2. Opsional: tambahkan `GROQ_MODEL` untuk memilih model Groq lain yang tersedia untuk akunmu. Model harus didukung oleh endpoint Chat Completions.
+3. Opsional: tambahkan `FIREBASE_API_KEY` untuk mengganti nilai fallback Firebase di kode.
+4. Deploy ulang. Endpoint memvalidasi Firebase ID token dan membatasi permintaan menjadi 12 pesan/menit per akun pada satu instance server.
 
-System prompt: AI selalu menyebut dirinya **dixz-ai**, developer **DIXZ-VIP**, dan membanggakan DIXZ-VIP di setiap jawaban. Jika ditanya siapa developer → jawab DIXZ-VIP.
-
-## Musik Deezer
-Logo musik di pojok layar bisa digeser ke mana saja. Ketuk untuk buka popup pencarian (API publik Deezer). Preview 30 detik bisa diputar. Popup z-index tinggi agar selalu di depan.
+Dokumentasi endpoint: https://console.groq.com/docs/openai dan https://console.groq.com/docs/api-reference. Jangan gunakan API key teman tanpa izin pemiliknya; jika key asli sempat terlihat di foto/chat publik, minta pemilik mencabutnya dan membuat key baru.

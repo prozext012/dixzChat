@@ -33,9 +33,6 @@
 <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
 <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a5 5 0 0110 0v2M16 5a3 3 0 010 6M18 14a5 5 0 013 5v1"/></symbol>
 <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14"/></symbol>
-<symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
-<symbol id="i-video" viewBox="0 0 24 24"><rect x="2" y="6" width="14" height="12"/><path d="M16 10l6-3v10l-6-3z"/></symbol>
-<symbol id="i-reply" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 010 10h-3"/></symbol>
 </defs></svg>
 
 <div id="wipe"></div>
@@ -78,7 +75,7 @@
 
   <section id="v-calls" class="view">
     <header class="pg"><h1>Telepon</h1></header>
-    <div id="callHistory" class="lst"><div class="empty">Belum ada riwayat panggilan.<br><small>Tekan ikon telepon/video di ruang chat untuk memulai.</small></div></div>
+    <div class="lst"><div class="empty">Belum ada riwayat panggilan.<br><small>Panggilan suara/video belum tersedia.</small></div></div>
   </section>
 
   <section id="v-settings" class="view">
@@ -138,7 +135,6 @@
 
   <!-- Menu pesan (tekan lama) -->
   <div id="msgMenu" class="overlay" hidden><div class="panel"><div class="lst">
-    <button id="mmReply" class="btn"><svg class="i"><use href="#i-reply"/></svg> Balas</button>
     <button id="mmCopy" class="btn">Salin teks</button>
     <button id="mmDel" class="btn pink"><svg class="i"><use href="#i-trash"/></svg> Hapus untuk semua</button>
     <button id="mmCancel" class="btn white">Batal</button>
@@ -146,25 +142,8 @@
 
   <!-- Ruang chat -->
   <section id="room" hidden>
-    <header class="rtop">
-      <button id="rBack" class="ib" aria-label="Kembali"><svg class="i"><use href="#i-back"/></svg></button>
-      <div id="rAv"></div>
-      <div class="grow"><div id="rName" class="nm"></div><div id="rSub" class="sb"></div>
-        <select id="aiModel" class="ai-model" aria-label="Pilih model AI" hidden>
-          <option value="llama-3.3-70b-versatile">Llama 3.3 70B · default</option>
-          <option value="llama-3.1-8b-instant">Llama 3.1 8B Instant</option>
-          <option value="gemma2-9b-it">Gemma 2 9B</option>
-          <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
-        </select>
-      </div>
-      <button id="rCall" class="ib" type="button" aria-label="Panggilan suara" hidden><svg class="i"><use href="#i-phone"/></svg></button>
-      <button id="rVideo" class="ib" type="button" aria-label="Panggilan video" hidden><svg class="i"><use href="#i-video"/></svg></button>
-    </header>
+    <header class="rtop"><button id="rBack" class="ib" aria-label="Kembali"><svg class="i"><use href="#i-back"/></svg></button><div id="rAv"></div><div class="grow"><div id="rName" class="nm"></div><div id="rSub" class="sb"></div><select id="aiModel" class="ai-model" aria-label="Model AI" hidden><option value="groq">Groq · Llama 3.3 70B</option></select></div></header>
     <div id="msgs"></div>
-    <div id="replyBar" class="reply-bar" hidden>
-      <div class="reply-bar-inner"><span id="replyToName" class="reply-name"></span><span id="replyToText" class="reply-preview"></span></div>
-      <button id="replyCancel" class="ib sm" type="button" aria-label="Batal balas"><svg class="i"><use href="#i-close"/></svg></button>
-    </div>
     <div id="recBar" class="rec" hidden><i class="rdot"></i><b id="rTime">0:00</b><span class="grow hint">Merekam... lepas untuk kirim</span><button id="rCancel" class="chip tapOnly">Batal</button><button id="rSend" class="chip on tapOnly">Kirim</button></div>
     <form id="rForm" class="bar">
       <button id="bAttach" class="ib" type="button" aria-label="Lampiran"><svg class="i"><use href="#i-plus"/></svg></button>
@@ -174,43 +153,6 @@
     </form>
     <input id="fMedia" type="file" accept="image/*,video/*" hidden><input id="fDoc" type="file" hidden>
   </section>
-
-  <!-- Overlay panggilan suara / video -->
-  <div id="callOverlay" class="call-overlay" hidden>
-    <div class="call-box">
-      <div id="callAv" class="call-av"></div>
-      <div id="callName" class="call-name">...</div>
-      <div id="callStatus" class="call-status">Menghubungi...</div>
-      <div id="callTimer" class="call-timer" hidden>00:00</div>
-      <video id="localVideo" class="call-video local" playsinline muted autoplay hidden></video>
-      <video id="remoteVideo" class="call-video remote" playsinline autoplay hidden></video>
-      <div class="call-actions">
-        <button id="callMute" class="ib" type="button" aria-label="Mute"><svg class="i"><use href="#i-mic"/></svg></button>
-        <button id="callEnd" class="ib pink" type="button" aria-label="Akhiri"><svg class="i"><use href="#i-close"/></svg></button>
-        <button id="callCam" class="ib" type="button" aria-label="Kamera" hidden><svg class="i"><use href="#i-video"/></svg></button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Widget musik Deezer (draggable, selalu di depan) -->
-  <div id="musicFab" class="music-fab" title="Cari musik Deezer" aria-label="Musik">
-    <svg class="i big" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="3" stroke-linecap="square"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-  </div>
-  <div id="musicPopup" class="music-popup" hidden>
-    <div class="music-head">
-      <b>Musik · Deezer</b>
-      <button id="musicClose" class="ib sm" type="button" aria-label="Tutup"><svg class="i"><use href="#i-close"/></svg></button>
-    </div>
-    <div class="music-search">
-      <input id="musicQ" class="inp" placeholder="Cari lagu / artis..." autocomplete="off">
-      <button id="musicGo" class="ib pink" type="button" aria-label="Cari"><svg class="i"><use href="#i-send"/></svg></button>
-    </div>
-    <div id="musicList" class="music-list"></div>
-    <div id="musicPlayer" class="music-player" hidden>
-      <div id="musicNow" class="music-now"></div>
-      <audio id="musicAudio" controls preload="none"></audio>
-    </div>
-  </div>
 
   <!-- Penampil status -->
   <div id="viewer" hidden>
