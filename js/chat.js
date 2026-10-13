@@ -1,0 +1,401 @@
+// Ruang chat: pesan teks/media, centang, mengetik, hapus, suara, lokasi, grup
+import { auth, db, doc, setDoc, updateDoc, addDoc, collection, query, orderBy, limitToLast, where, limit, getDocs, onSnapshot, serverTimestamp, increment } from './firebase.js';
+import { $, h, S, avatar, toast, fmt, size, dur, ico, getUser } from './ui.js';
+import { sfx } from './sfx.js';
+import { compressImage, upload, removeFile, getLocation, startRecorder } from './media.js';
+
+let cur = null, unsubM = null, unsubC = null, unsubU = null, tInt = null, seen = new Set(), first = true;
+let rec = null, recMode = '', recT = null, held = false, lastTyp = 0, menuCtx = null, playing = null;
+let replyTo = null;
+const pend = new Set(), busy = new Set();
+const typEl = h('div', 'bub in', h('span', 'dots', h('i'), h('i'), h('i')));
+typEl.hidden = true;
+export const currentChatId = () => cur?.id || null;
+const safe = n => n.replace(/[^\w.\-]/g, '_');
+function clearReply() {
+  replyTo = null;
+  const bar = $('replyBar');
+  if (bar) bar.hidden = true;
+}
+
+/* ---------- buka / tutup ---------- */
+export function openDirect(u) {
+  openRoom({ id: [S.me.id, u.id].sort().join('_'), type: 'direct', peer: u, title: u.username, participants: [S.me.id, u.id].sort() });
+}
+export function openGroup(c) { openRoom({ id: c.id, type: 'group', title: c.name, participants: c.participants }); }
+async function openRoom(cfg) {
+  cur = cfg; seen = new Set(); first = true; cfg.data = {}; clearReply();
+  $('msgs').replaceChildren(); typEl.hidden = true; $('rInput').value = ''; toggleSend();
+  $('rName').textContent = cfg.title;
+  const modelPicker = $('aiModel');
+  if (modelPicker) {
+    modelPicker.hidden = !cfg.peer?.isBot;
+    if (cfg.peer?.isBot) modelPicker.value = localStorage.getItem('dixzchat-ai-model') || 'llama-3.3-70b-versatile';
+  }
+  const showCall = cfg.type === 'direct' && !cfg.peer?.isBot;
+  if ($('rCall')) $('rCall').hidden = !showCall;
+  if ($('rVideo')) $('rVideo').hidden = !showCall;
+  $('rAv').replaceChildren(avatar(cfg.type === 'group' ? { username: cfg.title, isGroup: true } : cfg.peer));
+  $('sheet').hidden = true; $('gsheet').hidden = true; $('room').hidden = false; sfx('open');
+  await Promise.all(cfg.participants.map(getUser));
+  if (cur !== cfg) return;
+  unsubM?.(); unsubC?.(); unsubU?.();
+  unsubM = onSnapshot(query(collection(db, 'chats', cfg.id, 'messages'), orderBy('timestamp'), limitToLast(100)), renderMsgs, e => toast('Gagal memuat pesan: ' + e.code));
+  unsubC = onSnapshot(doc(db, 'chats', cfg.id), s => { cfg.data = s.data() || {}; updateSub(); }, () => {});
+  if (cfg.type === 'direct' && !cfg.peer.isBot) unsubU = onSnapshot(doc(db, 'users', cfg.peer.id), s => { if (s.exists()) { cfg.peer = { id: cfg.peer.id, ...s.data() }; S.cache.set(cfg.peer.id, cfg.peer); updateSub(); } });
+  clearInterval(tInt); tInt = setInterval(updateSub, 1500); updateSub();
+  const c = S.chats.find(x => x.id === cfg.id);
+  if (c?.unread?.[S.me.id]) setDoc(doc(db, 'chats', cfg.id), { unread: { [S.me.id]: 0 } }, { merge: true }).catch(() => {});
+}
+export function closeRoom() {
+  unsubM?.(); unsubC?.(); unsubU?.(); unsubM = unsubC = unsubU = null; clearInterval(tInt);
+  recEnd(false); clearReply(); cur = null; $('room').hidden = true;
+}
+function updateSub() {
+  if (!cur) return;
+  const d = cur.data || {}, me = S.me.id;
+  const typers = Object.entries(d.typing || {}).filter(([u, t]) => u !== me && typeof t === 'number' && Date.now() - t < 5000).map(([u]) => S.cache.get(u)?.username || 'seseorang');
+  const bt = !!(cur.peer?.isBot && cur.botBusy), was = typEl.hidden; typEl.hidden = !(typers.length || bt);
+  if (was && !typEl.hidden) { const b = $('msgs'); b.scrollTop = b.scrollHeight; }
+  let sub;
+  if (bt) sub = 'sedang mengetik...';
+  else if (typers.length) sub = cur.type === 'group' ? typers.join(', ') + ' mengetik...' : 'sedang mengetik...';
+  else if (cur.type === 'group') sub = cur.participants.length + ' anggota';
+  else { const p = cur.peer; sub = p.isOnline ? 'online' : p.lastSeen ? 'terlihat ' + fmt(p.lastSeen) : 'offline'; }
+  $('rSub').textContent = sub;
+}
+
+/* ---------- render pesan ---------- */
+function tick(m, pending) {
+  const st = pending ? 'pending' : cur.type === 'group' ? 'sent' : (m.status || 'sent'), two = st === 'delivered' || st === 'read';
+  const s = h('span', 'tk ' + st);
+  s.innerHTML = `<svg width="22" height="14" viewBox="0 0 22 14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square" aria-hidden="true"><path d="M1 8l4 4L13 2${two ? 'M9 10l3 2L21 2' : ''}"/></svg>`;
+  return s;
+}
+function audioEl(m) {
+  const a = new Audio(m.mediaUrl); a.preload = 'none';
+  const btn = h('button', 'ib sm', ico('play')), fill = h('i'), t = h('span', 'tm', dur(m.duration || 0));
+  btn.type = 'button';
+  btn.onclick = e => { e.stopPropagation(); a.paused ? a.play().catch(() => toast('Tidak bisa memutar audio.')) : a.pause(); };
+  a.onplay = () => { if (playing && playing !== a) playing.pause(); playing = a; btn.replaceChildren(ico('pause')); };
+  a.onpause = a.onended = () => btn.replaceChildren(ico('play'));
+  a.ontimeupdate = () => { const d = isFinite(a.duration) ? a.duration : (m.duration || 1); fill.style.width = Math.min(100, a.currentTime / d * 100) + '%'; };
+  return h('div', 'aud', btn, h('div', 'trk', fill), t);
+}
+function content(m) {
+  switch (m.type) {
+    case 'image': { const i = h('img', 'mimg'); i.src = m.mediaUrl; i.loading = 'lazy'; i.alt = 'Foto'; i.onclick = () => { $('lbImg').src = m.mediaUrl; $('lightbox').hidden = false; }; return i; }
+    case 'video': { const v = h('video', 'mimg'); v.src = m.mediaUrl; v.controls = true; v.playsInline = true; v.preload = 'metadata'; return v; }
+    case 'audio': return audioEl(m);
+    case 'file': { const a = h('a', 'file', ico('file'), h('div', 'grow', h('div', 'nm', m.fileName || 'File'), h('div', 'sb', size(m.size || 0)))); a.href = m.mediaUrl; a.target = '_blank'; a.rel = 'noopener'; return a; }
+    case 'location': { const a = h('a', 'file', ico('pin'), h('div', 'grow', h('div', 'nm', 'Lokasi'), h('div', 'sb', m.lat.toFixed(5) + ', ' + m.lng.toFixed(5)))); a.href = `https://www.google.com/maps?q=${m.lat},${m.lng}`; a.target = '_blank'; a.rel = 'noopener'; return a; }
+    default: return document.createTextNode(m.text || '');
+  }
+}
+function attachMenu(b, id, ref, m, mine) {
+  let t, x, y;
+  const open = () => {
+    menuCtx = { ref, m, mine, id };
+    $('mmCopy').hidden = m.type !== 'text' || m.deleted;
+    $('mmDel').hidden = !mine || m.deleted;
+    if ($('mmReply')) $('mmReply').hidden = !!m.deleted;
+    if ($('mmCopy').hidden && $('mmDel').hidden && (!$('mmReply') || $('mmReply').hidden)) return;
+    $('msgMenu').hidden = false; sfx('open');
+  };
+  b.addEventListener('pointerdown', e => { x = e.clientX; y = e.clientY; t = setTimeout(open, 450); });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => b.addEventListener(ev, () => clearTimeout(t)));
+  b.addEventListener('pointermove', e => { if (Math.abs(e.clientX - x) > 8 || Math.abs(e.clientY - y) > 8) clearTimeout(t); });
+  b.addEventListener('contextmenu', e => { e.preventDefault(); open(); });
+}
+function replyPreview(m) {
+  if (!m.replyTo) return null;
+  const who = m.replyTo.senderId === S.me.id ? 'Kamu' : (S.cache.get(m.replyTo.senderId)?.username || 'pengguna');
+  let preview = m.replyTo.text || '';
+  if (!preview) {
+    if (m.replyTo.type === 'image') preview = 'Foto';
+    else if (m.replyTo.type === 'video') preview = 'Video';
+    else if (m.replyTo.type === 'audio') preview = 'Pesan suara';
+    else if (m.replyTo.type === 'file') preview = m.replyTo.fileName || 'File';
+    else if (m.replyTo.type === 'location') preview = 'Lokasi';
+    else preview = 'Pesan';
+  }
+  return h('div', 'reply-quote', h('b', '', who), h('span', '', preview.slice(0, 80)));
+}
+function bubble(id, ref, m, pending, fresh) {
+  const mine = m.senderId === S.me.id, b = h('div', 'bub ' + (mine ? 'out' : 'in') + (fresh ? ' pop' : ''));
+  if (fresh) b.style.setProperty('--r', mine ? '3deg' : '-3deg');
+  if (cur.type === 'group' && !mine) b.append(h('div', 'who', S.cache.get(m.senderId)?.username || 'pengguna'));
+  if (m.deleted) {
+    b.classList.add('del');
+    b.append(h('i', '', 'Pesan ini dihapus'));
+  } else {
+    const rq = replyPreview(m);
+    if (rq) b.append(rq);
+    b.append(content(m));
+  }
+  const meta = h('div', 'mt', fmt(m.timestamp)); if (mine) meta.append(tick(m, pending));
+  b.append(meta); attachMenu(b, id, ref, m, mine); return b;
+}
+function renderMsgs(snap) {
+  const box = $('msgs'), stick = !box.children.length || box.scrollHeight - box.scrollTop - box.clientHeight < 140;
+  box.replaceChildren(); let newIn = false; const incoming = [];
+  if (cur.peer?.isBot) box.append(h('div', 'empty', 'dixz-ai by DIXZ-VIP · Jangan kirim data sensitif.'));
+  cur.hist = snap.docs.map(d => d.data()).filter(m => m.type === 'text' && !m.deleted && m.text).slice(-12).map(m => ({ role: m.senderId === 'ai-dixz' ? 'model' : 'user', text: m.text }));
+  snap.docs.forEach(d => {
+    const m = d.data({ serverTimestamps: 'estimate' }), fresh = !first && !seen.has(d.id); seen.add(d.id);
+    if (fresh && m.senderId !== S.me.id) newIn = true;
+    if (m.senderId !== S.me.id && m.status !== 'read') incoming.push(d.ref);
+    box.append(bubble(d.id, d.ref, m, d.metadata.hasPendingWrites, fresh));
+  });
+  pend.forEach(p => box.append(p)); box.append(typEl);
+  first = false; if (newIn) sfx('recv'); if (stick) box.scrollTop = box.scrollHeight;
+  if (cur.type === 'direct' && !document.hidden) incoming.forEach(r => updateDoc(r, { status: 'read' }).catch(() => {}));
+}
+
+/* ---------- kirim ---------- */
+async function ensureChat() {
+  const ref = doc(db, 'chats', cur.id);
+  if (!cur.ensured) { await setDoc(ref, { participants: cur.participants, type: cur.type, ...(cur.type === 'group' ? { name: cur.title } : {}) }, { merge: true }); cur.ensured = true; }
+  return ref;
+}
+async function push(msg, preview) {
+  const ref = await ensureChat(), un = {};
+  cur.participants.filter(p => p !== S.me.id).forEach(o => un[o] = increment(1));
+  if (replyTo) {
+    msg.replyTo = {
+      id: replyTo.id,
+      senderId: replyTo.m.senderId,
+      type: replyTo.m.type || 'text',
+      text: (replyTo.m.text || '').slice(0, 120),
+      fileName: replyTo.m.fileName || null
+    };
+    clearReply();
+  }
+  await setDoc(ref, { lastMessage: preview, lastMessageTime: serverTimestamp(), lastSender: S.me.id, unread: un, typing: { [S.me.id]: 0 } }, { merge: true });
+  return addDoc(collection(ref, 'messages'), { senderId: S.me.id, timestamp: serverTimestamp(), status: 'sent', deleted: false, ...msg });
+}
+function progressBubble(label) {
+  const fill = h('i'), b = h('div', 'bub out pop', label, h('div', 'prog', fill)), box = $('msgs');
+  pend.add(b); box.insertBefore(b, typEl); box.scrollTop = box.scrollHeight;
+  return { set: v => fill.style.width = Math.round(v * 100) + '%', done: () => { pend.delete(b); b.remove(); } };
+}
+async function sendMedia(file, kind) {
+  if (!cur) return;
+  if (!file || !file.size) return toast('File tidak valid.');
+  if (kind !== 'image' && file.size > 25 * 1048576) return toast('Ukuran maksimal 25 MB.');
+  if (kind === 'image' && file.size > 15 * 1048576) return toast('Foto maksimal 15 MB.');
+  const label = kind === 'image' ? 'Foto' : kind === 'video' ? 'Video' : file.name;
+  const p = progressBubble('Mengunggah ' + label + '...');
+  try {
+    await ensureChat();
+    const blob = kind === 'image' ? await compressImage(file) : file;
+    const ext = kind === 'image' ? 'foto.jpg' : safe(file.name || 'file.bin');
+    const path = `chats/${cur.id}/${S.me.id}/${Date.now()}_${ext}`;
+    const ctype = blob.type || file.type || (kind === 'image' ? 'image/jpeg' : 'application/octet-stream');
+    const up = await upload(path, blob, p.set, ctype);
+    const msg = { type: kind, mediaUrl: up.url, mediaPath: up.path };
+    if (kind === 'file') { msg.fileName = file.name; msg.size = file.size; }
+    await push(msg, kind === 'file' ? 'Dokumen: ' + file.name : label);
+    sfx('send');
+  } catch (e) {
+    console.error(e);
+    toast('Gagal mengirim: ' + (e.message || e.code || 'error'));
+  } finally { p.done(); }
+}
+async function recStart(mode) {
+  if (rec || !cur) return;
+  let r;
+  try { r = await startRecorder(); } catch (err) {
+    return toast(err?.message?.includes('NotAllowed') || err?.name === 'NotAllowedError' ? 'Izin mikrofon ditolak.' : 'Mikrofon tidak tersedia.');
+  }
+  if (mode === 'hold' && !held) { r.cancel(); return; }
+  rec = r; recMode = mode; const t0 = Date.now();
+  $('recBar').hidden = false; $('recBar').classList.toggle('tap', mode === 'tap'); $('rTime').textContent = '0:00'; sfx('rec');
+  recT = setInterval(() => $('rTime').textContent = dur(Math.round((Date.now() - t0) / 1000)), 250);
+}
+async function recEnd(send) {
+  if (!rec) return;
+  const r = rec; rec = null; recMode = ''; clearInterval(recT); $('recBar').hidden = true; sfx('stop');
+  if (!send) return r.cancel();
+  let blob, duration;
+  try {
+    ({ blob, duration } = await r.stop());
+  } catch (e) {
+    return toast('Gagal merekam suara.');
+  }
+  if (!blob || duration < 1) return toast('Tahan lebih lama untuk merekam.');
+  const p = progressBubble('Mengirim pesan suara...');
+  try {
+    await ensureChat();
+    const ext = (blob.type || '').includes('mp4') ? 'm4a' : 'webm';
+    const path = `chats/${cur.id}/${S.me.id}/${Date.now()}_vn.${ext}`;
+    const up = await upload(path, blob, p.set, blob.type || 'audio/webm');
+    await push({ type: 'audio', mediaUrl: up.url, mediaPath: up.path, duration }, 'Pesan suara');
+    sfx('send');
+  } catch (e) {
+    console.error(e);
+    toast('Gagal mengirim suara: ' + (e.message || e.code || 'error'));
+  } finally { p.done(); }
+}
+const toggleSend = () => { const has = !!$('rInput').value.trim(); $('bSend').hidden = !has; $('bMic').hidden = has || !!cur?.peer?.isBot; $('bAttach').hidden = !!cur?.peer?.isBot; };
+
+/* ---------- AI dixzChat (kontak bot) ---------- */
+async function askBot(msgRef, text) {
+  const room = cur; room.botBusy = true; updateSub();
+  try {
+    const hist = [...(room.hist || [])];
+    if (!hist.length || hist[hist.length - 1].text !== text) hist.push({ role: 'user', text });
+    const idToken = await auth.currentUser.getIdToken();
+    const r = await fetch('/api/ai-chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken, messages: hist, model: localStorage.getItem('dixzchat-ai-model') || 'llama-3.3-70b-versatile' }) });
+    const j = await r.json(); if (!r.ok) throw new Error(j.error || 'AI gagal menjawab');
+    const ref = doc(db, 'chats', room.id), inRoom = cur && cur.id === room.id;
+    await setDoc(ref, { lastMessage: j.reply.slice(0, 80), lastMessageTime: serverTimestamp(), lastSender: 'ai-dixz', ...(inRoom ? {} : { unread: { [S.me.id]: increment(1) } }) }, { merge: true });
+    await addDoc(collection(ref, 'messages'), { senderId: 'ai-dixz', timestamp: serverTimestamp(), status: 'read', deleted: false, type: 'text', text: j.reply });
+    updateDoc(msgRef, { status: 'read' }).catch(() => {});
+  } catch (e) { toast(e.message || 'AI gagal menjawab'); }
+  finally { room.botBusy = false; if (cur === room) updateSub(); }
+}
+
+/* ---------- centang "diterima" (dipanggil saat ada chat masuk) ---------- */
+export async function markDelivered(id) {
+  if (busy.has(id)) return; busy.add(id);
+  try {
+    const s = await getDocs(query(collection(db, 'chats', id, 'messages'), where('status', '==', 'sent'), limit(50)));
+    await Promise.all(s.docs.filter(d => d.data().senderId !== S.me.id).map(d => updateDoc(d.ref, { status: 'delivered' })));
+  } catch { /* abaikan */ } finally { busy.delete(id); }
+}
+
+/* ---------- pasang event (sekali) ---------- */
+function setReply(ctx) {
+  if (!ctx || !ctx.m || ctx.m.deleted) return;
+  replyTo = ctx;
+  const bar = $('replyBar');
+  if (!bar) return;
+  const who = ctx.m.senderId === S.me.id ? 'Kamu' : (S.cache.get(ctx.m.senderId)?.username || 'pengguna');
+  let preview = ctx.m.text || '';
+  if (!preview) {
+    if (ctx.m.type === 'image') preview = 'Foto';
+    else if (ctx.m.type === 'video') preview = 'Video';
+    else if (ctx.m.type === 'audio') preview = 'Pesan suara';
+    else if (ctx.m.type === 'file') preview = ctx.m.fileName || 'File';
+    else if (ctx.m.type === 'location') preview = 'Lokasi';
+    else preview = 'Pesan';
+  }
+  $('replyToName').textContent = who;
+  $('replyToText').textContent = preview.slice(0, 80);
+  bar.hidden = false;
+  $('rInput')?.focus();
+}
+
+function startCall(video) {
+  if (!cur || cur.peer?.isBot || cur.type !== 'direct') return;
+  const ov = $('callOverlay');
+  if (!ov) return;
+  $('callAv').replaceChildren(avatar(cur.peer));
+  $('callName').textContent = cur.peer.username || 'Kontak';
+  $('callStatus').textContent = video ? 'Memulai panggilan video...' : 'Memulai panggilan suara...';
+  $('callTimer').hidden = true;
+  $('localVideo').hidden = !video;
+  $('remoteVideo').hidden = !video;
+  $('callCam').hidden = !video;
+  ov.hidden = false;
+  sfx('open');
+
+  // WebRTC penuh butuh signaling server (Firebase RT / Cloud Function).
+  // Untuk sekarang: UI + akses media lokal, peer connection disiapkan.
+  let stream = null, timer = null, sec = 0;
+  const end = () => {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    stream = null;
+    if (timer) clearInterval(timer);
+    ov.hidden = true;
+    const lv = $('localVideo'), rv = $('remoteVideo');
+    if (lv) lv.srcObject = null;
+    if (rv) rv.srcObject = null;
+    sfx('stop');
+  };
+  $('callEnd').onclick = end;
+  $('callMute').onclick = () => {
+    if (!stream) return;
+    const tracks = stream.getAudioTracks();
+    tracks.forEach(t => { t.enabled = !t.enabled; });
+    toast(tracks[0]?.enabled ? 'Mikrofon nyala' : 'Mikrofon dimatikan', 'ok');
+  };
+  $('callCam').onclick = () => {
+    if (!stream) return;
+    const tracks = stream.getVideoTracks();
+    tracks.forEach(t => { t.enabled = !t.enabled; });
+  };
+
+  navigator.mediaDevices.getUserMedia({ audio: true, video: video ? { facingMode: 'user' } : false })
+    .then(s => {
+      stream = s;
+      if (video) {
+        const lv = $('localVideo');
+        if (lv) { lv.srcObject = s; lv.hidden = false; }
+      }
+      $('callStatus').textContent = 'Menunggu lawan bicara...';
+      // Simulasi "terhubung" setelah beberapa detik (tanpa signaling server peer tidak bisa saling dengar)
+      setTimeout(() => {
+        if (!stream) return;
+        $('callStatus').textContent = 'Terhubung (lokal)';
+        $('callTimer').hidden = false;
+        timer = setInterval(() => {
+          sec++;
+          $('callTimer').textContent = dur(sec);
+        }, 1000);
+        toast('Panggilan lokal aktif. Agar saling dengar butuh signaling server (WebRTC penuh).', 'ok');
+      }, 1500);
+    })
+    .catch(err => {
+      toast(err.name === 'NotAllowedError' ? 'Izin kamera/mikrofon ditolak.' : 'Gagal mengakses media.');
+      end();
+    });
+}
+
+export function initChat() {
+  $('rBack').onclick = closeRoom;
+  const modelPicker = $('aiModel');
+  if (modelPicker) modelPicker.onchange = () => {
+    localStorage.setItem('dixzchat-ai-model', modelPicker.value);
+    toast('Model AI diganti: ' + modelPicker.options[modelPicker.selectedIndex].text, 'ok');
+  };
+  if ($('rCall')) $('rCall').onclick = () => startCall(false);
+  if ($('rVideo')) $('rVideo').onclick = () => startCall(true);
+  $('rInput').addEventListener('input', () => {
+    toggleSend(); const n = Date.now();
+    if (cur && Object.keys(cur.data || {}).length && n - lastTyp > 2500) { lastTyp = n; updateDoc(doc(db, 'chats', cur.id), { ['typing.' + S.me.id]: n }).catch(() => {}); }
+  });
+  $('rForm').onsubmit = async e => {
+    e.preventDefault(); const t = $('rInput').value.trim(); if (!t || !cur) return;
+    $('rInput').value = ''; toggleSend(); sfx('send');
+    try { const mref = await push({ type: 'text', text: t }, t.slice(0, 80)); if (cur?.peer?.isBot) askBot(mref, t); } catch (err) { toast('Gagal kirim: ' + err.code); $('rInput').value = t; toggleSend(); }
+  };
+  $('bAttach').onclick = () => { $('attach').hidden = false; sfx('open'); };
+  $('tMedia').onclick = () => { $('attach').hidden = true; $('fMedia').click(); };
+  $('tDoc').onclick = () => { $('attach').hidden = true; $('fDoc').click(); };
+  $('tVoice').onclick = () => { $('attach').hidden = true; recStart('tap'); };
+  $('tLoc').onclick = async () => {
+    $('attach').hidden = true; toast('Mengambil lokasi...', 'ok');
+    try { const { lat, lng } = await getLocation(); await push({ type: 'location', lat, lng }, 'Lokasi'); sfx('send'); } catch (e) { toast(e.message || 'Gagal mengambil lokasi.'); }
+  };
+  $('fMedia').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) sendMedia(f, f.type.startsWith('video') ? 'video' : 'image'); };
+  $('fDoc').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) sendMedia(f, 'file'); };
+  const mic = $('bMic');
+  mic.addEventListener('pointerdown', e => { e.preventDefault(); held = true; try { mic.setPointerCapture(e.pointerId); } catch {} recStart('hold'); });
+  ['pointerup', 'pointercancel'].forEach(ev => mic.addEventListener(ev, () => { held = false; if (recMode === 'hold') recEnd(true); }));
+  mic.addEventListener('contextmenu', e => e.preventDefault());
+  $('rCancel').onclick = () => recEnd(false); $('rSend').onclick = () => recEnd(true);
+  $('mmCancel').onclick = () => $('msgMenu').hidden = true;
+  if ($('mmReply')) $('mmReply').onclick = () => {
+    $('msgMenu').hidden = true;
+    setReply(menuCtx);
+  };
+  if ($('replyCancel')) $('replyCancel').onclick = clearReply;
+  $('mmCopy').onclick = () => { navigator.clipboard?.writeText(menuCtx.m.text || ''); $('msgMenu').hidden = true; toast('Teks disalin.', 'ok'); };
+  $('mmDel').onclick = async () => {
+    const { ref, m } = menuCtx; $('msgMenu').hidden = true;
+    try { await updateDoc(ref, { deleted: true, text: '', mediaUrl: null, mediaPath: null, type: 'text' }); removeFile(m.mediaPath); sfx('del'); } catch (e) { toast('Gagal menghapus: ' + e.code); }
+  };
+  $('lightbox').onclick = () => $('lightbox').hidden = true;
+}
