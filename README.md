@@ -23,13 +23,28 @@ dokumen · lokasi (link Google Maps) · status 24 jam (teks/foto) · foto profil
 - Lampiran bisa dibaca siapa pun yang sudah login dan tahu URL-nya (URL berisi token acak), bukan hanya anggota chat.
 - Setelah deploy ulang, buka dua kali (service worker memuat versi lama dulu). Naikkan `V` di `sw.js` tiap rilis.
 
-## AI dixzChat (Groq API resmi lewat backend Vercel)
+## AI dixzChat (XEMOZ_API lewat backend Vercel)
 
-Semua chat AI menggunakan satu endpoint resmi Groq melalui `api/ai-chat.js`. API key hanya dibaca server dan tidak dikirim ke browser. Model default: `llama-3.3-70b-versatile`.
+AI chat memakai endpoint XEMOZ_API melalui `api/ai-chat.js` di server Vercel. URL endpoint tidak dipanggil langsung dari frontend. Pengguna yang membuka chat bot dapat memilih GPT 5.5, GPT 5.4, GPT 5.3, DeepSeek V4 Flash, DeepSeek V3.2 Thinking, DeepAI Chat, atau Blackbox.
 
-1. Di Vercel > Settings > Environment Variables, tambahkan `GROQ_API_KEY` dengan API key Groq yang valid. Jangan masukkan key ke HTML, JavaScript frontend, atau repository.
-2. Opsional: tambahkan `GROQ_MODEL` untuk memilih model Groq lain yang tersedia untuk akunmu. Model harus didukung oleh endpoint Chat Completions.
-3. Opsional: tambahkan `FIREBASE_API_KEY` untuk mengganti nilai fallback Firebase di kode.
-4. Deploy ulang. Endpoint memvalidasi Firebase ID token dan membatasi permintaan menjadi 12 pesan/menit per akun pada satu instance server.
+### Deploy
+1. Push perubahan file ke GitHub lalu tunggu Vercel selesai deploy.
+2. Tidak perlu `GROQ_API_KEY` atau `GROQ_MODEL` untuk alur XEMOZ_API ini.
+3. `FIREBASE_API_KEY` tetap bisa diatur di Environment Variables; bila tidak ada, fungsi memakai nilai fallback proyek yang sudah ada.
+4. Login ke DixzChat, buka kontak bot AI, pilih model, lalu kirim pesan.
 
-Dokumentasi endpoint: https://console.groq.com/docs/openai dan https://console.groq.com/docs/api-reference. Jangan gunakan API key teman tanpa izin pemiliknya; jika key asli sempat terlihat di foto/chat publik, minta pemilik mencabutnya dan membuat key baru.
+### Catatan pengujian
+- URL GPT 5.5 dengan parameter `pesan` dan DeepAI Chat dengan parameter `message` berhasil memberikan JSON saat dicek.
+- Format respons model lain belum diverifikasi. Parser hanya mengenali beberapa kunci umum dan menampilkan JSON mentah bila formatnya tidak dikenali.
+- Endpoint Claude Haiku tidak ditambahkan karena URL yang diberikan tidak menunjukkan parameter untuk mengirim prompt. Image generation dan MathGPT juga tidak ditambahkan karena fitur yang dipilih saat ini hanya chat.
+- XEMOZ_API merupakan layanan pihak ketiga; ketersediaan, batas pemakaian, privasi, dan stabilitasnya bergantung pada penyedianya.
+
+
+## XEMOZ_API: 10 endpoint dan perintah @AI di grup
+
+- Semua 10 endpoint yang diberikan tercatat di `api/ai-chat.js`: AI Image, Blackbox, Claude Haiku 3, DeepAI Chat, DeepSeek V3.2 Thinking, DeepSeek V4 Flash, GPT 5.3, GPT 5.4, GPT 5.5, dan MathGPT AI.
+- Jalur chat umum hanya menerima model chat. AI Image dan MathGPT terdaftar, tetapi sengaja ditolak oleh jalur chat karena bukan model chat umum.
+- Di grup, kirim pesan yang diawali `@AI`, contoh: `@AI cari info berita hari ini`. Pesan perintah tetap terlihat di grup; klien pengirim memanggil GPT 5.5 dan mem-posting balasan sebagai `AI dixzChat` ke grup. Hanya aplikasi pengirim perintah yang menjalankan panggilan tersebut, untuk menghindari setiap anggota memanggil AI berulang kali.
+- URL Claude Haiku 3 yang diberikan tidak memuat parameter prompt. Kode tidak menebak parameternya; model itu akan memberi pesan penjelasan sampai nama parameter dikonfirmasi. Jika sudah dikonfirmasi, set Environment Variable `XEMOZ_CLAUDE_PARAM` di Vercel ke nama parameter resmi, lalu redeploy.
+- Format respons yang belum diketahui tidak dipaksakan ke skema tertentu; respons JSON yang tidak cocok ditampilkan sebagai teks JSON mentah.
+- Endpoint XEMOZ belum dapat diuji langsung dari lingkungan pembuatan ini karena DNS jaringan tidak tersedia. Setelah deploy, uji satu per satu.
