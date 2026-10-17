@@ -24,7 +24,7 @@ async function openRoom(cfg) {
   const modelPicker = $('aiModel');
   if (modelPicker) {
     modelPicker.hidden = !cfg.peer?.isBot;
-    if (cfg.peer?.isBot) modelPicker.value = 'groq';
+    if (cfg.peer?.isBot) modelPicker.value = localStorage.getItem('dixzchat-ai-model') || 'gpt-5.5';
   }
   $('rAv').replaceChildren(avatar(cfg.type === 'group' ? { username: cfg.title, isGroup: true } : cfg.peer));
   $('sheet').hidden = true; $('gsheet').hidden = true; $('room').hidden = false; sfx('open');
@@ -93,7 +93,7 @@ function attachMenu(b, id, ref, m, mine) {
 function bubble(id, ref, m, pending, fresh) {
   const mine = m.senderId === S.me.id, b = h('div', 'bub ' + (mine ? 'out' : 'in') + (fresh ? ' pop' : ''));
   if (fresh) b.style.setProperty('--r', mine ? '3deg' : '-3deg');
-  if (cur.type === 'group' && !mine) b.append(h('div', 'who', S.cache.get(m.senderId)?.username || 'pengguna'));
+  if (cur.type === 'group' && !mine) b.append(h('div', 'who', m.senderId === 'ai-dixz' ? 'AI dixzChat' : (S.cache.get(m.senderId)?.username || 'pengguna')));
   if (m.deleted) { b.classList.add('del'); b.append(h('i', '', 'Pesan ini dihapus')); } else b.append(content(m));
   const meta = h('div', 'mt', fmt(m.timestamp)); if (mine) meta.append(tick(m, pending));
   b.append(meta); attachMenu(b, id, ref, m, mine); return b;
@@ -169,13 +169,14 @@ async function recEnd(send) {
 const toggleSend = () => { const has = !!$('rInput').value.trim(); $('bSend').hidden = !has; $('bMic').hidden = has || !!cur?.peer?.isBot; $('bAttach').hidden = !!cur?.peer?.isBot; };
 
 /* ---------- AI dixzChat (kontak bot) ---------- */
-async function askBot(msgRef, text) {
-  const room = cur; room.botBusy = true; updateSub();
+async function askBot(msgRef, text, options = {}) {
+  const room = options.room || cur; if (!room || room.botBusy) return; room.botBusy = true; if (cur === room) updateSub();
   try {
-    const hist = [...(room.hist || [])];
+    const hist = [...(room.hist || [])].filter(m => m.text !== options.commandText);
     if (!hist.length || hist[hist.length - 1].text !== text) hist.push({ role: 'user', text });
     const idToken = await auth.currentUser.getIdToken();
-    const r = await fetch('/api/ai-chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken, messages: hist, model: 'groq' }) });
+    const model = options.model || localStorage.getItem('dixzchat-ai-model') || 'gpt-5.5';
+    const r = await fetch('/api/ai-chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken, messages: hist, model }) });
     const j = await r.json(); if (!r.ok) throw new Error(j.error || 'AI gagal menjawab');
     const ref = doc(db, 'chats', room.id), inRoom = cur && cur.id === room.id;
     await setDoc(ref, { lastMessage: j.reply.slice(0, 80), lastMessageTime: serverTimestamp(), lastSender: 'ai-dixz', ...(inRoom ? {} : { unread: { [S.me.id]: increment(1) } }) }, { merge: true });
@@ -209,7 +210,16 @@ export function initChat() {
   $('rForm').onsubmit = async e => {
     e.preventDefault(); const t = $('rInput').value.trim(); if (!t || !cur) return;
     $('rInput').value = ''; toggleSend(); sfx('send');
-    try { const mref = await push({ type: 'text', text: t }, t.slice(0, 80)); if (cur?.peer?.isBot) askBot(mref, t); } catch (err) { toast('Gagal kirim: ' + err.code); $('rInput').value = t; toggleSend(); }
+    try {
+      const room = cur; const mref = await push({ type: 'text', text: t }, t.slice(0, 80));
+      if (room?.peer?.isBot) askBot(mref, t, { room });
+      else if (room?.type === 'group' && /^@AI\b/i.test(t)) {
+        const prompt = t.replace(/^@AI\b\s*/i, '').trim();
+        if (!prompt) { toast('Tulis pertanyaan setelah @AI.'); return; }
+        // The sender's client runs this once after sending the command, then posts the reply to this group.
+        askBot(mref, prompt, { room, commandText: t, model: 'gpt-5.5' });
+      }
+    } catch (err) { toast('Gagal kirim: ' + (err.message || err.code)); $('rInput').value = t; toggleSend(); }
   };
   $('bAttach').onclick = () => { $('attach').hidden = false; sfx('open'); };
   $('tMedia').onclick = () => { $('attach').hidden = true; $('fMedia').click(); };
